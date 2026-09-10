@@ -1,14 +1,44 @@
 services:
   app:
-    image: contrans_image
+    image: samiamahmood/contrans_image
     ports:
       - "8050:8050"
     volumes:
-      - .:/contrans2026
+      - .:/congress_transparency_class26
+    networks:
+      - dbnetwork
 
-  postgres:
-    image: postgres:latest
+  postgres: # pulling this contianer from docker hub
+    image: postgres:18.6 # what port does the software run on? pulling the 18.6 version of postgres (pulling the image from docker hub)
     ports:
-      - "5432:5432"
-    volumnes:
-      -
+      - "5432:5432" # what port does the software want to run on
+    volumes: 
+      - postgresdata:/var/lib/postgresql/18/docker # where is the data in the container? Inside the container we have this folder where the database data will be saved 
+    env_file:
+      - .env # what needs to be given to the container for secret credentials/passwords/configurations? (Environment variables) (this is where the password is stored, so that it is not visible)
+    networks:
+      - dbnetwork
+
+# Docker volume: docker will choose some folder, somewhere on your computer. It will have a deep complicated file address (file path)
+# But you will never have to type in that path, because Docker uses an alias instead.
+# You can store data and files here, so that they are not destroyed when the container closes.
+
+  neo4j:
+    image: neo4j:2026.07.1-community-trixie
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4jdata:/data
+    env_file:
+      - .env
+    networks:
+      - dbnetwork
+
+volumes: # creating the local space that is saved on local computer, so that the data is not destroyed when the container closes
+  postgresdata:
+  neo4jdata:
+
+networks:
+  dbnetwork:
+  
