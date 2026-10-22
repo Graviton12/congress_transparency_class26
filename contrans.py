@@ -400,15 +400,15 @@ class contrans:
         vote_compare.to_csv('data/processed/vote_compare.csv', index=False)
 
     # Document data
-    def pandas_df_to_dbml(df: pd.DataFrame, table_name: str) -> str:
+    def pandas_df_to_dbml(self, df: pd.DataFrame, table_name: str) -> str:
         dbml_string = f"Table {table_name} {{\n"
         for column_name, column_type in df.dtypes.items():
-            dbml_type = map_pandas_dtype_to_dbml_type(column_type)
+            dbml_type = self.map_pandas_dtype_to_dbml_type(column_type)
             dbml_string += f"  {column_name} {dbml_type}\n"
         dbml_string += "}\n"
         return dbml_string
 
-    def map_pandas_dtype_to_dbml_type(dtype) -> str:
+    def map_pandas_dtype_to_dbml_type(self, dtype) -> str:
         dtype_name = str(dtype)
         if "int" in dtype_name:
             return "int"
