@@ -7,6 +7,8 @@ import dotenv
 import os
 import time
 import yaml
+import psycopg
+from sqlalchemy import create_engine
 
 class contrans:
 
@@ -21,10 +23,13 @@ class contrans:
         self.github = 'https://github.com/jkropko/contrans2026'
         self.useragent = f'{self.botname}/{self.version} ({self.github}) python-requests/{requests.__version__}'
         self.headers = {'User-Agent': self.useragent}
+        self.engine = f'postgresql+psycopg://postgres:{self.POSTGRES_PASSWORD}@localhost:5432/contrans'
+        self.db_url = os.getenv('NEON_DATABASE_URL_UNPOOLED')
+        self.neon_engine = create_engine(self.db_url.replace('postgresql://', 'postgresql+psycopg://'), pool_pre_ping=True)
 
 # Raw data acquisition
-## build crosswalk with ideology
-    def get_crosswalk(self, congress=119):
+## build ideology (joining biodata and voteview)
+    def get_ideology(self, congress=119):
         url = f'https://voteview.com/static/data/out/members/HS{congress}_members.csv'
         ideology = pd.read_csv(url)
 
@@ -341,7 +346,7 @@ class contrans:
             print(f'{len(failed)} FEC IDs failed; rerun to retry them: {failed}')
         return schedule_e
 
-    # Organize raw data into processed (3NF) data
+# Organize raw data into processed (3NF) data
     def make_members(self):
         bioinfo = pd.read_parquet('data/raw/bioinfo.parquet')
         ideology = pd.read_parquet('data/raw/ideology.parquet')
@@ -358,7 +363,7 @@ class contrans:
     def make_crosswalk(self):
         ideology = pd.read_parquet('data/raw/ideology.parquet')
         fec = ideology.explode('fec_id')
-        fec = fec[['icpsr', 'bioguide_id', 'fec_id']]
+        fec = fec[['icpsr','bioguide_id','fec_id']]
         fec.to_csv("data/processed/crosswalk.csv", index=False)
 
     def make_terms(self):
@@ -399,8 +404,18 @@ class contrans:
         committees.to_csv('data/processed/committees.csv', index=False)
         vote_compare.to_csv('data/processed/vote_compare.csv', index=False)
 
-    # Document data
+# Document data
     def pandas_df_to_dbml(self, df: pd.DataFrame, table_name: str) -> str:
+        """
+        Converts a pandas DataFrame to a DBML string.
+
+        Args:
+            df: The pandas DataFrame to convert.
+            table_name: The name of the table in the DBML schema.
+
+        Returns:
+            A DBML string representing the DataFrame schema.
+        """
         dbml_string = f"Table {table_name} {{\n"
         for column_name, column_type in df.dtypes.items():
             dbml_type = self.map_pandas_dtype_to_dbml_type(column_type)
@@ -409,6 +424,7 @@ class contrans:
         return dbml_string
 
     def map_pandas_dtype_to_dbml_type(self, dtype) -> str:
+        """Maps a pandas dtype to a DBML type."""
         dtype_name = str(dtype)
         if "int" in dtype_name:
             return "int"
@@ -417,3 +433,30 @@ class contrans:
         if "datetime" in dtype_name:
             return "datetime"
         return "varchar"
+
+# Upload to Docker DB
+    
+    #Create new contrans DB
+    def create_new_db(self):
+        dbserver = psycopg.connect(
+            user = 'postgres',
+            password = self.POSTGRES_PASSWORD,
+            host = 'localhost',
+            port = '5432')
+        dbserver.autocommit = True
+        cursor = dbserver.cursor()
+        try:
+            cursor.execute('CREATE DATABASE contrans')
+        except:
+            cursor.execute('DROP DATABASE contrans')
+            cursor.execute('CREATE DATABASE contrans')
+
+
+    #docker compose up
+    def data_to_postgres(self):
+        engine = create_engine(self.engine)
+        tables = ['bills', 'committee_members', 'committees', 'crosswalk',
+                  'expenditures', 'members', 'terms', 'vote_compare']
+        for t in tables:
+            data = pd.read_csv(f'data/processed/{t}.csv')
+            data.to_sql(f'{t}', con=engine, index=False, chunksize=1000, if_exists='replace')
